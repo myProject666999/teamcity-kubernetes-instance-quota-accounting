@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+                            http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+                            http://www.springframework.org/schema/mvc
+                            http://www.springframework.org/schema/mvc/spring-mvc-3.0.xsd"
+       default-autowire="constructor">
+    <bean class="jetbrains.buildServer.clouds.kubernetes.KubePodNameGeneratorImpl"/>
+    <bean id="kubeCloudClientFactory" class="jetbrains.buildServer.clouds.kubernetes.KubeCloudClientFactory" />
+    <bean id="kubeBackgroundUpdater" class="jetbrains.buildServer.clouds.kubernetes.KubeBackgroundUpdaterImpl" />
+    <bean id="kubeAuthStrategyProvider" class="jetbrains.buildServer.clouds.kubernetes.auth.KubeAuthStrategyProviderImpl" />
+    <bean id="podTemplateProviders" class="jetbrains.buildServer.clouds.kubernetes.podSpec.BuildAgentPodTemplateProvidersImpl" />
+    <bean id="deploymentContentProvider" class="jetbrains.buildServer.clouds.kubernetes.podSpec.DeploymentContentProviderImpl" />
+    <bean id="kubeProfileEditController" class="jetbrains.buildServer.clouds.kubernetes.web.KubeProfileEditController" />
+    <bean id="kubeNamespaces" class="jetbrains.buildServer.clouds.kubernetes.web.ChooserController$Namespaces" />
+    <bean id="kubeDeployments" class="jetbrains.buildServer.clouds.kubernetes.web.ChooserController$Deployments" />
+    <bean id="kubeDeleteImageDialogController" class="jetbrains.buildServer.clouds.kubernetes.web.KubeDeleteImageDialogController" />
+    <bean class="jetbrains.buildServer.clouds.kubernetes.connection.KubernetesConnectionProvider" />
+    <bean class="jetbrains.buildServer.clouds.kubernetes.connection.KubernetesCredentialsFactoryImpl" />
+    <bean class="jetbrains.buildServer.clouds.kubernetes.connection.AvailableKubeConnectionsController" />
+<!--    <bean class="jetbrains.buildServer.clouds.kubernetes.buildFeature.RunInKubeFeature" />-->
+<!--    <bean class="jetbrains.buildServer.clouds.kubernetes.buildFeature.RunInKubeAgentsFilter" />-->
+    <mvc:annotation-driven/>
+</beans>

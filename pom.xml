@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.jetbrains.teamcity</groupId>
+  <artifactId>teamcity-kubernetes-plugin</artifactId>
+  <version>${revision}</version>
+  <packaging>pom</packaging>
+  <properties>
+      <teamcity.version>LOCAL-SNAPSHOT</teamcity.version>
+      <kotlin.version>1.9.22</kotlin.version>
+      <local.repo.path>local-repo</local.repo.path>
+      <revision>1.0-SNAPSHOT</revision>
+      <aws.java.sdk.version>2.54.1</aws.java.sdk.version>
+  </properties>
+  <repositories>
+    <repository>
+      <id>local-teamcity-artifacts</id>
+      <url>file://${local.repo.path}</url>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
+    <repository>
+        <id>TeamCity</id>
+        <url>https://download.jetbrains.com/teamcity-repository/</url>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+      <pluginRepository>
+          <id>TeamCity</id>
+          <url>https://download.jetbrains.com/teamcity-repository</url>
+      </pluginRepository>
+  </pluginRepositories>
+
+  <distributionManagement>
+    <repository>
+      <id>teamcity-space</id>
+      <url>https://packages.jetbrains.team/maven/p/tc/maven</url>
+    </repository>
+  </distributionManagement>
+
+  <build>
+      <pluginManagement>
+          <plugins>
+              <plugin>
+                  <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-compiler-plugin</artifactId>
+                  <configuration>
+                      <source>1.8</source>
+                      <target>1.8</target>
+                  </configuration>
+              </plugin>
+              <plugin>
+                  <groupId>org.codehaus.mojo</groupId>
+                  <artifactId>license-maven-plugin</artifactId>
+                  <inherited>false</inherited>
+                  <version>2.4.0</version>
+                  <configuration>
+                      <thirdPartyFilename>third-party-libraries.json</thirdPartyFilename>
+                      <fileTemplate>${maven.multiModuleProjectDirectory}/license-third-party.ftl</fileTemplate>
+                      <excludedGroups>tc-sbt-runner.*|com.jetbrains.teamcity.*|org.jetbrains.teamcity.*|org.jetbrains.kotlin.*|org.jetbrains.kotlinx.*|org.jetbrains.intellij.*|com.jetbrains.intellij.*|jetbrains.ring.*</excludedGroups>
+                      <excludedArtifacts>jcip-annotations</excludedArtifacts>
+                      <force>true</force>
+                      <includedScopes>compile,runtime</includedScopes>
+                  </configuration>
+              </plugin>
+              <plugin>
+                  <groupId>org.jetbrains.teamcity</groupId>
+                  <artifactId>teamcity-sdk-maven-plugin</artifactId>
+                  <version>0.2</version>
+                  <configuration>
+                      <teamcityDir>/home/user/projects/teamcity/2017.2.x/buildserver/.idea_artifacts/dist-teamcity-tomcat</teamcityDir>
+                      <serverDebugStr>-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=10111</serverDebugStr>
+                  </configuration>
+              </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-deploy-plugin</artifactId>
+              <version>3.1.1</version>
+              <executions>
+                <execution>
+                  <id>deploy-to-local-k8s-repo</id>
+                  <goals>
+                    <goal>deploy</goal>
+                  </goals>
+                  <phase>deploy</phase>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-surefire-plugin</artifactId>
+              <version>3.5.4</version>
+            </plugin>
+          </plugins>
+      </pluginManagement>
+  </build>
+  <modules>
+    <module>teamcity-kubernetes-plugin-server</module>
+    <module>teamcity-kubernetes-plugin-agent</module>
+    <module>teamcity-kubernetes-plugin-common</module>
+    <module>build</module>
+  </modules>
+
+  <profiles>
+    <profile>
+      <id>javac-release-flag-compat</id>
+      <activation>
+        <jdk>[9,)</jdk>
+      </activation>
+      <properties>
+        <maven.compiler.release>8</maven.compiler.release>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <argLine>
+                -XX:+IgnoreUnrecognizedVMOptions
+                --add-opens java.base/java.lang=ALL-UNNAMED
+                --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+                --add-opens java.base/java.util=ALL-UNNAMED
+                --add-opens java.base/java.io=ALL-UNNAMED
+              </argLine>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

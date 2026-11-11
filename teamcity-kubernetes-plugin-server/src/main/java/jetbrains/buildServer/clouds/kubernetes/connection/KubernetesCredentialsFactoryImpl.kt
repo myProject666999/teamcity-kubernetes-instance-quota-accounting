@@ -1,0 +1,126 @@
+package jetbrains.buildServer.clouds.kubernetes.connection
+
+import io.fabric8.kubernetes.client.Config
+import io.fabric8.kubernetes.client.ConfigBuilder
+import jetbrains.buildServer.clouds.kubernetes.KubeApiProxySettingsImpl
+import jetbrains.buildServer.clouds.kubernetes.KubeUtils
+import jetbrains.buildServer.clouds.kubernetes.ParametersKubeApiConnection
+import jetbrains.buildServer.clouds.kubernetes.auth.KubeAuthStrategy
+import jetbrains.buildServer.clouds.kubernetes.auth.KubeAuthStrategyProvider
+import jetbrains.buildServer.clouds.kubernetes.connector.KubeApiConnection
+import jetbrains.buildServer.clouds.kubernetes.connector.KubeApiProxySettings
+import jetbrains.buildServer.serverSide.ProjectManager
+import jetbrains.buildServer.serverSide.SProject
+import jetbrains.buildServer.serverSide.TeamCityProperties
+import jetbrains.buildServer.serverSide.connections.ConnectionDescriptor
+import jetbrains.buildServer.serverSide.connections.credentials.ConnectionCredentials
+import jetbrains.buildServer.serverSide.connections.credentials.ConnectionCredentialsException
+import jetbrains.buildServer.util.StringUtil
+
+class KubernetesCredentialsFactoryImpl(private val myAuthStrategyProvider: KubeAuthStrategyProvider, private val projectManager: ProjectManager) : KubernetesCredentialsFactory {
+    public override fun createConfig(connectionSettings: KubeApiConnection, authStrategy: KubeAuthStrategy): Config {
+        var configBuilder = ConfigBuilder()
+            .withNamespace(connectionSettings.namespace)
+            .withRequestTimeout(DEFAULT_REQUEST_TIMEOUT_MS)
+            .withHttp2Disable(true)
+            .withConnectionTimeout(DEFAULT_CONNECTION_TIMEOUT_MS)
+
+        if (authStrategy.requiresServerUrl()) {
+            configBuilder.withMasterUrl(connectionSettings.apiServerUrl)
+        }
+
+        val caCertData = connectionSettings.caCertData
+        if (StringUtil.isEmptyOrSpaces(caCertData)) {
+            configBuilder.withTrustCerts(true)
+        } else {
+            configBuilder.withCaCertData(KubeUtils.encodeBase64IfNecessary(caCertData!!))
+        }
+        configBuilder = authStrategy.apply(configBuilder, connectionSettings)
+
+        val proxySettings = connectionSettings.proxySettings
+        val serverProxySettings = getServerProxySettings(connectionSettings, authStrategy)
+        if (proxySettings != null) {
+            configureProxy(configBuilder, proxySettings)
+        } else if (serverProxySettings != null) {
+            configureProxy(configBuilder, serverProxySettings)
+        }
+
+        return configBuilder.build()
+    }
+
+    private fun getServerProxySettings(connectionSettings: KubeApiConnection, authStrategy: KubeAuthStrategy): KubeApiProxySettings? {
+        val propertyPrefix = if (!authStrategy.requiresServerUrl() ||
+            connectionSettings.apiServerUrl.startsWith("https://", ignoreCase = true)) {
+            "teamcity.https"
+        } else {
+            "teamcity.http"
+        }
+
+        val proxyHost = TeamCityProperties.getProperty("$propertyPrefix.proxyHost")
+        if (StringUtil.isEmptyOrSpaces(proxyHost)) {
+            return null
+        }
+
+        val proxyPort = TeamCityProperties.getInteger("$propertyPrefix.proxyPort", -1)
+        val proxyUrl = if (proxyPort == -1) {
+            proxyHost
+        } else {
+            "$proxyHost:$proxyPort"
+        }
+
+        // While our server supports also
+        val proxyUsername = TeamCityProperties.getProperty("$propertyPrefix.proxyLogin")
+        val proxyPassword = TeamCityProperties.getProperty("$propertyPrefix.proxyPassword")
+        val nonProxyHosts = TeamCityProperties.getProperty("$propertyPrefix.nonProxyHosts")
+            .split("|")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toTypedArray()
+
+        return KubeApiProxySettingsImpl(
+            proxyUrl,
+            proxyUsername,
+            proxyPassword,
+            nonProxyHosts
+        )
+    }
+
+
+    @Deprecated("Deprecated in ConnectionCredentialsFactory")
+    @Throws(ConnectionCredentialsException::class)
+    public override fun requestCredentials(connectionDescriptor: ConnectionDescriptor): ConnectionCredentials {
+        val kubeApiConnection: KubeApiConnection = ParametersKubeApiConnection(connectionDescriptor.parameters)
+        val authStrategy =
+            myAuthStrategyProvider.find(kubeApiConnection.authStrategy) ?: throw ConnectionCredentialsException("Received unknown auth strategy " + kubeApiConnection.authStrategy)
+
+        return KubernetesConnectionCredentialsImpl(createConfig(kubeApiConnection, authStrategy), connectionDescriptor.parameters)
+    }
+
+    @Throws(ConnectionCredentialsException::class)
+    public override fun requestCredentials(project: SProject, connectionDescriptor: ConnectionDescriptor): ConnectionCredentials {
+        return requestCredentials(connectionDescriptor)
+    }
+
+    public override fun getType(): String = KubernetesConnectionConstants.CONNECTION_TYPE
+
+    private fun configureProxy(configBuilder: ConfigBuilder, proxySettings: KubeApiProxySettings) {
+        // Fabric8 client uses 'httpsProxy' for HTTPS destinations and `httpProxy` for HTTP destination (K8s API).
+        // Setting both ensures the proxy is always used.
+        configBuilder.withHttpProxy(proxySettings.proxyUri)
+        configBuilder.withHttpsProxy(proxySettings.proxyUri)
+
+        proxySettings.proxyUsername?.let {
+            configBuilder.withProxyUsername(it)
+        }
+        proxySettings.proxyPassword?.let {
+            configBuilder.withProxyPassword(it)
+        }
+
+        configBuilder.withNoProxy(*proxySettings.nonProxyHosts)
+    }
+
+    companion object {
+        private val DEFAULT_CONNECTION_TIMEOUT_MS = 5 * 1000
+        private val DEFAULT_REQUEST_TIMEOUT_MS = 15 * 1000
+    }
+}
