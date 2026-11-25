@@ -22,6 +22,12 @@ Configure Kubernetes [Cloud Profile](https://www.jetbrains.com/help/teamcity/?Ag
 
 The plugin supports Kubernetes cluster images to start new pods with a TeamCity build agent running in one of the containers. The plugin supports the [official TeamCity Build Agent Docker image](https://hub.docker.com/r/jetbrains/teamcity-agent) out of the box. You can use your own image as well.
 
+#### Instance limits and quota accounting
+
+Each cloud profile can define a profile-wide maximum number of instances (`profileInstanceLimit`) and each image can define its own limit (`imageInstanceLimit`). `0` forbids starting new instances, a blank or negative value means unlimited.
+
+See [docs/instance-quota.md](docs/instance-quota.md) for the exact `InstanceStatus` occupancy table (running / starting / terminating / not counted), how terminating, failed and pending instances are accounted for, the single-snapshot quota message format, and the save-time vs runtime validation trade-offs.
+
 ### Helm steps
 
 Add **Helm** build step to build configuration, choose one of supported commands: [install](https://docs.helm.sh/helm/#helm-install), [upgrade](https://docs.helm.sh/helm/#helm-upgrade), [rollback](https://docs.helm.sh/helm/#helm-rollback), [test](https://docs.helm.sh/helm/#helm-test), [delete](https://docs.helm.sh/helm/#helm-delete). 

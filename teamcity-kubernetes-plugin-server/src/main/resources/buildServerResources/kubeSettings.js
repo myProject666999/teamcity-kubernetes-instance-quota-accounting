@@ -60,7 +60,7 @@ BS.Kube.ProfileSettingsForm = OO.extend(BS.PluginPropertiesForm, {
         required: 'The field must not be empty',
         notSelectedPodTemplateMode: 'Select pod specification',
         notSelectedAgentPool: 'Select agent pool',
-        nonNegative: 'Must be non-negative number',
+        integerLimit: 'Must be an integer: 0 forbids new instances, empty or a negative value means unlimited',
         invalidAgentNamePrefix: 'Invalid agent name prefix'
     },
 
@@ -439,8 +439,12 @@ BS.Kube.ProfileSettingsForm = OO.extend(BS.PluginPropertiesForm, {
 
             imageInstanceLimit: function () {
                 var imageInstanceLimit = this._image['imageInstanceLimit'];
-                if (imageInstanceLimit && (!$j.isNumeric(imageInstanceLimit) || imageInstanceLimit < 0 )) {
-                    this.addOptionError('nonNegative', 'imageInstanceLimit');
+                // Keep in sync with InstanceLimits / KubeProfilePropertiesProcessor:
+                // empty = unlimited, negative = unlimited, 0 = no starts allowed.
+                // Strict integer syntax: "3a", "3.5" and whitespace-padded " 3" are rejected
+                // by the server-side validation as well.
+                if (imageInstanceLimit && !(/^-?\d+$/.test(imageInstanceLimit))) {
+                    this.addOptionError('integerLimit', 'imageInstanceLimit');
                     isValid = false;
                 }
             }.bind(this),

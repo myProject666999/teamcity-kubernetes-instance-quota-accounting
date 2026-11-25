@@ -6,10 +6,10 @@ import com.intellij.openapi.diagnostic.Logger;
 import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.client.KubernetesClientException;
-import java.text.MessageFormat;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import jetbrains.buildServer.agent.Constants;
@@ -198,16 +198,83 @@ public class KubeCloudClient implements CloudClientEx {
         if(!myImageIdToImageMap.containsKey(kubeCloudImageId)){
             return CanStartNewInstanceResult.no("Can't start instance of unknown cloud image with id " + kubeCloudImageId);
         }
-        int profileInstanceLimit = myKubeClientParams.getInstanceLimit();
-        if(profileInstanceLimit >= 0 && myImageIdToImageMap.values().stream().mapToInt(KubeCloudImage::getRunningInstanceCount).sum() >= profileInstanceLimit) {
-            return CanStartNewInstanceResult.no(MessageFormat.format("The limit of {0} instance(s) per profile is reached.", String.valueOf(profileInstanceLimit)), CanStartNewInstanceResult.ReasonType.QUOTA_LIMIT_REACHED);
+
+        // Build the quota occupancy once. Both profile/image comparisons and all numbers in the
+        // rejection messages are derived from these snapshots, so they can never disagree and the
+        // counts cannot change between the check and the message.
+        Map<String, InstanceQuotaSnapshot> snapshotsByImage = InstanceQuotaSnapshot.byImage(myImageIdToImageMap.values());
+        InstanceQuotaSnapshot profileUsage = snapshotsByImage.values().stream()
+          .reduce(InstanceQuotaSnapshot.EMPTY, InstanceQuotaSnapshot::plus);
+        InstanceQuotaSnapshot imageUsage = snapshotsByImage.getOrDefault(kubeCloudImageId, InstanceQuotaSnapshot.EMPTY);
+
+        final int profileInstanceLimit;
+        try {
+            profileInstanceLimit = myKubeClientParams.getInstanceLimit();
+        } catch (IllegalArgumentException e) {
+            // InvalidInstanceLimitException (readable guidance) or a raw NumberFormatException
+            // from another parameters implementation must not crash canStart.
+            LOG.warn("Refusing to start an instance because the profile instance limit is invalid", e);
+            return CanStartNewInstanceResult.no(limitConfigurationMessage("profileInstanceLimit", e));
+        }
+        if(profileInstanceLimit >= 0 && profileUsage.getOccupied() >= profileInstanceLimit) {
+            return CanStartNewInstanceResult.no(
+              quotaLimitMessage("profile", null, profileInstanceLimit, profileUsage),
+              CanStartNewInstanceResult.ReasonType.QUOTA_LIMIT_REACHED);
         }
 
-        int imageLimit = kubeCloudImage.getInstanceLimit();
-        if (imageLimit >= 0 && kubeCloudImage.getRunningInstanceCount() >= imageLimit){
-            return CanStartNewInstanceResult.no(MessageFormat.format("The limit of {0} instance(s) per image is reached.", String.valueOf(imageLimit)), CanStartNewInstanceResult.ReasonType.QUOTA_LIMIT_REACHED);
+        final int imageLimit;
+        try {
+            imageLimit = kubeCloudImage.getInstanceLimit();
+        } catch (IllegalArgumentException e) {
+            LOG.warn("Refusing to start an instance because the image instance limit is invalid for image " + kubeCloudImageId, e);
+            return CanStartNewInstanceResult.no(limitConfigurationMessage("imageInstanceLimit (" + kubeCloudImageId + ")", e));
+        }
+        if (imageLimit >= 0 && imageUsage.getOccupied() >= imageLimit){
+            return CanStartNewInstanceResult.no(
+              quotaLimitMessage("image", kubeCloudImageId, imageLimit, imageUsage),
+              CanStartNewInstanceResult.ReasonType.QUOTA_LIMIT_REACHED);
         }
         return CanStartNewInstanceResult.yes();
+    }
+
+    @NotNull
+    private static String limitConfigurationMessage(@NotNull String settingName,
+                                                     @NotNull IllegalArgumentException e) {
+        if (e instanceof InvalidInstanceLimitException) {
+            return e.getMessage();
+        }
+        return "Instance limit setting '" + settingName + "' is not a valid integer: " + e.getMessage()
+          + ". Leave it empty or use a negative value for unlimited, use 0 to forbid starting new instances,"
+          + " or use a positive integer as the limit.";
+    }
+
+    @NotNull
+    private static String quotaLimitMessage(@NotNull String scope,
+                                            @Nullable String imageId,
+                                            int limit,
+                                            @NotNull InstanceQuotaSnapshot usage) {
+        StringBuilder message = new StringBuilder();
+        if ("profile".equals(scope)) {
+            message.append("The instance limit of ").append(limit).append(" per profile is reached.");
+        } else {
+            message.append("The instance limit of ").append(limit).append(" per image");
+            if (imageId != null) {
+                message.append(" '").append(imageId).append('\'');
+            }
+            message.append(" is reached.");
+        }
+        if (limit == 0) {
+            message.append(" The limit is 0, so starting new instances is forbidden.");
+        }
+        // Single source of numbers: the snapshot passed in by the caller.
+        message.append(" Current usage: ")
+               .append(usage.getOccupied()).append(" occupied out of ").append(limit)
+               .append(" (").append(usage.getRunning()).append(" running, ")
+               .append(usage.getStarting()).append(" starting/scheduled, ")
+               .append(usage.getTerminating()).append(" terminating); ")
+               .append(usage.toCountString()).append('.');
+        message.append(" Terminating instances are counted because their pods still consume cluster resources until deletion completes.");
+        return message.toString();
     }
 
     @Nullable

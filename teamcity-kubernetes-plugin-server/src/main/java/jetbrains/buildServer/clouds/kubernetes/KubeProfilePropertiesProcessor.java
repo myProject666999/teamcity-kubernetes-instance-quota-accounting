@@ -34,6 +34,18 @@ public class KubeProfilePropertiesProcessor implements PropertiesProcessor {
     @Override
     public Collection<InvalidProperty> process(Map<String, String> map) {
         Collection<InvalidProperty> invalids = new ArrayList<>();
+
+        // Validate quota limits even when authentication settings are incomplete: an invalid
+        // integer here would otherwise surface as a raw NumberFormatException later, when the
+        // client parses the limit. Empty/null and any negative integer are valid (unlimited),
+        // 0 is valid (starts forbidden).
+        final String profileLimitError = InstanceLimits.validate(
+                map.get(KubeParametersConstants.PROFILE_INSTANCE_LIMIT),
+                "Maximum instances count per profile");
+        if (profileLimitError != null) {
+            invalids.add(new InvalidProperty(KubeParametersConstants.PROFILE_INSTANCE_LIMIT, profileLimitError));
+        }
+
         final String authStrategy = map.get(AUTH_STRATEGY);
         if (StringUtil.isEmptyOrSpaces(authStrategy)) {
             invalids.add(new InvalidProperty(AUTH_STRATEGY, "Authentication strategy must be selected"));
@@ -54,6 +66,12 @@ public class KubeProfilePropertiesProcessor implements PropertiesProcessor {
           final String agentNamePrefix = image.getParameter(KubeParametersConstants.AGENT_NAME_PREFIX);
           if (!StringUtil.isEmpty(agentNamePrefix) && agentNamePrefix.length() > AgentTypeConsts.IMAGE_ID_LENGTH){
             invalids.add(new InvalidProperty(KubeParametersConstants.AGENT_NAME_PREFIX, "Agent name prefix must not be longer than " + AgentTypeConsts.IMAGE_ID_LENGTH + " characters"));
+          }
+
+          final String imageInstanceLimit = image.getParameter(KubeParametersConstants.IMAGE_INSTANCE_LIMIT);
+          final String limitError = InstanceLimits.validate(imageInstanceLimit, "Maximum instances count per image");
+          if (limitError != null) {
+            invalids.add(new InvalidProperty(KubeParametersConstants.IMAGE_INSTANCE_LIMIT, limitError));
           }
         });
 

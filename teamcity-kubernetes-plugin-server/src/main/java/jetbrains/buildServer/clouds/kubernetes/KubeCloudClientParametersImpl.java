@@ -4,7 +4,6 @@ package jetbrains.buildServer.clouds.kubernetes;
 import java.util.Collection;
 import jetbrains.buildServer.clouds.CloudClientParameters;
 import jetbrains.buildServer.util.CollectionsUtil;
-import jetbrains.buildServer.util.StringUtil;
 import org.jetbrains.annotations.NotNull;
 
 import static jetbrains.buildServer.clouds.kubernetes.KubeParametersConstants.*;
@@ -35,6 +34,6 @@ public class KubeCloudClientParametersImpl extends ParametersKubeApiConnection i
     @Override
     public int getInstanceLimit() {
         String parameter = myParameters.get(PROFILE_INSTANCE_LIMIT);
-        return StringUtil.isEmpty(parameter) ? -1 : Integer.valueOf(parameter);
+        return InstanceLimits.parse(parameter, "Profile instance limit (Maximum instances count)");
     }
 }

@@ -113,6 +113,10 @@ public class KubeCloudImageImpl implements KubeCloudImage {
 
     @Override
     public int getRunningInstanceCount() {
+        // Historical "active" count backed by the platform predicate. Intentionally does NOT
+        // include SCHEDULED_TO_STOP/STOPPING. Quota decisions use
+        // InstanceQuotaSnapshot (built from getInstances()) which additionally counts the
+        // terminating states until the Kubernetes resources are actually gone.
         return (int) myIdToInstanceMap.values().stream().filter(kubeCloudInstance -> kubeCloudInstance.getStatus().isStartingOrStarted()).count();
     }
 

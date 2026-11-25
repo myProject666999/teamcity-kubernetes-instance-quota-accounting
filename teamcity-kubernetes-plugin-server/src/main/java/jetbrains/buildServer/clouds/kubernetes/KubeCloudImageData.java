@@ -60,8 +60,10 @@ public class KubeCloudImageData {
 
     public int getInstanceLimit() {
         String parameter = myRawImageData.getParameter(KubeParametersConstants.IMAGE_INSTANCE_LIMIT);
-        if(StringUtil.isEmpty(parameter)) return -1;
-        return Integer.parseInt(parameter);
+        // Note: keep the strict parse semantics (Integer.parseInt rejects surrounding whitespace
+        // like " 3" and suffixes like "3a"), but report it with a readable exception that the
+        // quota check converts into a user-visible result instead of crashing the profile.
+        return InstanceLimits.parse(parameter, "Image instance limit");
     }
 
     public String getAgentNamePrefix() {
